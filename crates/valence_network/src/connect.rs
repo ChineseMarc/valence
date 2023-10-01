@@ -256,7 +256,7 @@ async fn handle_login(
     remote_addr: SocketAddr,
     handshake: HandshakeData,
 ) -> anyhow::Result<Option<(NewClientInfo, CleanupOnDrop)>> {
-    if handshake.protocol_version != PROTOCOL_VERSION {
+    /*if handshake.protocol_version != PROTOCOL_VERSION {
         io.send_packet(&LoginDisconnectS2c {
             // TODO: use correct translation key.
             reason: format!("Mismatched Minecraft version (server is on {MINECRAFT_VERSION})")
@@ -266,7 +266,7 @@ async fn handle_login(
         .await?;
 
         return Ok(None);
-    }
+    }*/
 
     let LoginHelloC2s {
         username,
