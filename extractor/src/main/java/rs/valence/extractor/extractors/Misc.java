@@ -4,6 +4,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.EntityStatuses;
+import net.minecraft.entity.attribute.ClampedEntityAttribute;
+import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.data.TrackedDataHandler;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.passive.SnifferEntity;

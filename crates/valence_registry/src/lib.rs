@@ -39,17 +39,17 @@ use valence_ident::Ident;
 
 pub struct RegistryPlugin;
 
-/// The [`SystemSet`] where the [`RegistryCodec`](codec::RegistryCodec) and
-/// [`TagsRegistry`](tags::TagsRegistry) caches are rebuilt. Systems that modify
-/// the registry codec or tags registry should run _before_ this.
+/// The [`SystemSet`] where the [`RegistryCodec`] and [`TagsRegistry`] caches
+/// are rebuilt. Systems that modify the registry codec or tags registry should
+/// run _before_ this.
 ///
 /// This set lives in [`PostUpdate`].
 #[derive(SystemSet, Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RegistrySet;
 
 impl Plugin for RegistryPlugin {
-    fn build(&self, app: &mut bevy_app::App) {
-        app.configure_set(PostUpdate, RegistrySet);
+    fn build(&self, app: &mut App) {
+        app.configure_sets(PostUpdate, RegistrySet);
 
         codec::build(app);
         tags::build(app);

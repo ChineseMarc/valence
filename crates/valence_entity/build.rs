@@ -13,6 +13,7 @@ struct Entity {
     typ: Option<String>,
     translation_key: Option<String>,
     fields: Vec<Field>,
+    attributes: Option<Vec<Attribute>>,
     parent: Option<String>,
 }
 
@@ -27,6 +28,12 @@ struct Field {
     index: u8,
     #[serde(flatten)]
     default_value: Value,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+struct Attribute {
+    name: String,
+    base_value: f64,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -262,7 +269,6 @@ impl Value {
         match self {
             Value::Integer(_) => quote!(VarInt(#self_lvalue)),
             Value::OptionalInt(_) => quote!(OptionalInt(#self_lvalue)),
-            Value::ItemStack(_) => quote!(Some(&#self_lvalue)),
             _ => quote!(&#self_lvalue),
         }
     }
@@ -273,10 +279,12 @@ type Entities = BTreeMap<String, Entity>;
 pub fn main() -> anyhow::Result<()> {
     rerun_if_changed(["extracted/misc.json", "extracted/entities.json"]);
 
-    write_generated_file(build()?, "entity.rs")
+    write_generated_file(build_entities()?, "entity.rs")?;
+
+    Ok(())
 }
 
-fn build() -> anyhow::Result<TokenStream> {
+fn build_entities() -> anyhow::Result<TokenStream> {
     let entity_types = serde_json::from_str::<EntityTypes>(include_str!("extracted/misc.json"))
         .context("failed to deserialize misc.json")?
         .entity_type;
@@ -359,6 +367,68 @@ fn build() -> anyhow::Result<TokenStream> {
                         bundle_init_fields.extend([quote! {
                             #snake_entity_name_ident: Default::default(),
                         }]);
+
+                        match entity_name {
+                            "LivingEntity" => {
+                                bundle_fields.extend([quote! {
+                                    pub living_absorption: super::living::Absorption,
+                                }]);
+
+                                bundle_init_fields.extend([quote! {
+                                    living_absorption: Default::default(),
+                                }]);
+
+                                bundle_fields.extend([quote! {
+                                    pub living_attributes: super::attributes::EntityAttributes,
+                                }]);
+
+                                // Get the default values of the attributes.
+                                let mut attribute_default_values = TokenStream::new();
+
+                                if let Some(attributes) = &entity.attributes {
+                                    for attribute in attributes {
+                                        let name = ident(attribute.name.to_pascal_case());
+                                        let base_value = attribute.base_value;
+                                        attribute_default_values.extend([quote! {
+                                            .with_attribute_and_value(
+                                                super::EntityAttribute::#name,
+                                                #base_value,
+                                            )
+                                        }]);
+                                    }
+                                }
+
+                                bundle_init_fields.extend([quote! {
+                                    living_attributes: super::attributes::EntityAttributes::new() #attribute_default_values,
+                                }]);
+
+                                bundle_fields.extend([quote! {
+                                    pub living_attributes_tracker: super::attributes::TrackedEntityAttributes,
+                                }]);
+                                bundle_init_fields.extend([quote! {
+                                    living_attributes_tracker: Default::default(),
+                                }]);
+
+                                bundle_fields.extend([quote! {
+                                    pub living_active_status_effects: super::active_status_effects::ActiveStatusEffects,
+                                }]);
+                                bundle_init_fields.extend([quote! {
+                                    living_active_status_effects: Default::default(),
+                                }]);
+                            }
+                            "PlayerEntity" => {
+                                bundle_fields.extend([quote! {
+                                    pub player_food: super::player::Food,
+                                    pub player_saturation: super::player::Saturation,
+                                }]);
+
+                                bundle_init_fields.extend([quote! {
+                                    player_food: Default::default(),
+                                    player_saturation: Default::default(),
+                                }]);
+                            }
+                            _ => {}
+                        }
                     }
                     MarkerOrField::Field { entity_name, field } => {
                         let snake_field_name = field.name.to_snake_case();
@@ -473,6 +543,7 @@ fn build() -> anyhow::Result<TokenStream> {
             systems.extend([quote! {
                 #[allow(clippy::needless_borrow)]
                 #[allow(clippy::suspicious_else_formatting)]
+                #[allow(clippy::needless_borrows_for_generic_args)]
                 fn #system_name_ident(
                     mut query: Query<(&#component_path, &mut tracked_data::TrackedData), Changed<#component_path>>
                 ) {
@@ -499,6 +570,34 @@ fn build() -> anyhow::Result<TokenStream> {
             pub struct #entity_name_ident;
         }]);
 
+        match entity_name.as_str() {
+            "LivingEntity" => {
+                module_body.extend([quote! {
+                    #[doc = "Special untracked component for `LivingEntity` entities."]
+                    #[derive(bevy_ecs::component::Component, Copy, Clone, Default, Debug)]
+                    pub struct Absorption(pub f32);
+                }]);
+            }
+            "PlayerEntity" => {
+                module_body.extend([quote! {
+                    #[doc = "Special untracked component for `PlayerEntity` entities."]
+                    #[derive(bevy_ecs::component::Component, Copy, Clone, Debug)]
+                    pub struct Food(pub i32);
+
+                    impl Default for Food {
+                        fn default() -> Self {
+                            Self(20)
+                        }
+                    }
+
+                    #[doc = "Special untracked component for `PlayerEntity` entities."]
+                    #[derive(bevy_ecs::component::Component, Copy, Clone, Default, Debug)]
+                    pub struct Saturation(pub f32);
+                }]);
+            }
+            _ => {}
+        }
+
         modules.extend([quote! {
             #[allow(clippy::module_inception)]
             pub mod #stripped_snake_entity_name_ident {
@@ -506,6 +605,36 @@ fn build() -> anyhow::Result<TokenStream> {
             }
         }]);
     }
+
+    systems.extend([quote! {
+        /// Special case for `living::Absorption`.
+        /// Updates the `AbsorptionAmount` component of the player entity.
+        fn update_living_and_player_absorption(
+            mut query: Query<(&living::Absorption, &mut player::AbsorptionAmount), Changed<living::Absorption>>
+        ) {
+            for (living_absorption, mut player_absorption) in query.iter_mut() {
+                player_absorption.0 = living_absorption.0;
+            }
+        }
+
+        /// Special case for `living::Attributes`.
+        fn update_living_attributes(
+            mut query: Query<(
+                &mut attributes::TrackedEntityAttributes,
+                &mut attributes::EntityAttributes,
+            ),
+            Changed<attributes::EntityAttributes>>
+        ) {
+            for (mut tracked, mut attributes) in query.iter_mut() {
+                for attribute in attributes.take_recently_changed() {
+                    tracked.mark_modified(&attributes, attribute);
+                }
+            }
+        }
+    }]);
+
+    system_names.push(quote!(update_living_and_player_absorption));
+    system_names.push(quote!(update_living_attributes));
 
     #[derive(Deserialize, Debug)]
     struct MiscEntityData {
@@ -542,6 +671,8 @@ fn build() -> anyhow::Result<TokenStream> {
             });
 
     Ok(quote! {
+        use valence_generated::attributes::EntityAttribute;
+
         #modules
 
         /// Identifies the type of an entity.

@@ -20,6 +20,7 @@
 
 pub mod abilities;
 pub mod action;
+pub mod brand;
 mod chunk_view;
 pub mod client;
 pub mod client_command;
@@ -38,6 +39,7 @@ pub mod op_level;
 pub mod resource_pack;
 pub mod spawn;
 pub mod status;
+pub mod status_effect;
 pub mod teleport;
 pub mod title;
 
